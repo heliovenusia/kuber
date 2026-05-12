@@ -21,7 +21,7 @@ st.set_page_config(page_title="SAIL Kuber", layout="wide")
 
 LOG_PATH = "results/predictions_log.xlsx"
 CRORE               = 10_000_000.0
-CREDIT_TUNE_WORKING = 2.6
+CREDIT_TUNE_WORKING = 2.2
 CREDIT_TUNE_HOLIDAY = 0.4
 
 def _fmt_cr(v: float) -> str:

@@ -1008,6 +1008,20 @@ def apply_full_redistribution(cal_df: pd.DataFrame, holidays: Set[date], factor_
     return out
 
 
+def _day_factor(dt, holidays: Set[date], dyn: dict) -> float:
+    """Return the redistribution keep-factor for a given date.
+    Mirrors the logic in build_targets_for_date / apply_branch_state_aware_redistribution.
+    """
+    ts = pd.Timestamp(dt).normalize()
+    if ts.weekday() == 6:
+        return float(dyn.get("sun",   1.0))
+    if ts.weekday() == 5 and saturday_of_month_rank(ts) in (2, 4):
+        return float(dyn.get("sat24", 1.0))
+    if ts.date() in holidays:
+        return float(dyn.get("pub",   1.0))
+    return 1.0
+
+
 def predict_rr_cashflow(prediction_df: pd.DataFrame, model_data: Dict[str, object], start_date, horizon_days: int = 31, holidays: Optional[Set[date]] = None, holiday_master_df: Optional[pd.DataFrame] = None):
     if holidays is None:
         holidays = set()
@@ -1087,6 +1101,24 @@ def predict_rr_cashflow(prediction_df: pd.DataFrame, model_data: Dict[str, objec
         invoice_details = invoice_details[
             (invoice_details["pred_retirement_date"] >= start_ts) & (invoice_details["pred_retirement_date"] <= end_ts)
         ].copy()
+
+    # Scale customer/invoice-level amounts by the same per-date holiday factor used in
+    # daily redistribution so they are consistent with the redistributed rr_daily totals.
+    if not cust_day.empty:
+        cust_day = cust_day.copy()
+        cust_day["_factor"] = cust_day["date"].apply(lambda d: _day_factor(d, holidays, dyn))
+        cust_day["rr_total"] = (cust_day["rr_total"] * cust_day["_factor"]).clip(lower=0.0)
+        cust_day = cust_day.drop(columns=["_factor"])
+
+    if not invoice_details.empty:
+        invoice_details = invoice_details.copy()
+        invoice_details["_factor"] = invoice_details["pred_retirement_date"].apply(
+            lambda d: _day_factor(d, holidays, dyn)
+        )
+        invoice_details["invoice_amount"] = (
+            invoice_details["invoice_amount"] * invoice_details["_factor"]
+        ).clip(lower=0.0)
+        invoice_details = invoice_details.drop(columns=["_factor"])
 
     return (
         _coerce_dtypes(daily.reset_index(drop=True)),
